@@ -37,8 +37,8 @@ https://github.com/user-attachments/assets/a4607370-360f-432a-8dec-4b19ca6e4d99
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/dksrinath/rag-chatbot.git
-   cd rag-chatbot
+   git clone https://github.com/2329088-prog/rag-pdf_bot.git
+   cd rag-pdf_bot
    ```
 2. **Create a virtual environment:**
    ```bash
