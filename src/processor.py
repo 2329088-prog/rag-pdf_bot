@@ -5,9 +5,12 @@ from langchain_core.documents import Document
 from src.config import Config
 
 try:
-    import fitz  # PyMuPDF
+    import pymupdf as fitz
 except Exception:
-    fitz = None
+    try:
+        import fitz  # PyMuPDF fallback
+    except Exception:
+        fitz = None
 
 try:
     from PIL import Image, ImageDraw

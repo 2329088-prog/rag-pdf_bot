@@ -7,7 +7,7 @@ from src.config import Config
 import json
 from langchain_core.documents import Document
 
-st.set_page_config(page_title="RAG Chatbot", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="PDF RAG Chatbot", page_icon="📚", layout="wide")
 
 def initialize_session_state():
     """
@@ -20,21 +20,23 @@ def initialize_session_state():
     if "embedding_manager" not in st.session_state:
         st.session_state.embedding_manager = EmbeddingManager()
         
-    if "chat_manager" not in st.session_state:
-        # Check if API key is available
-        if not Config.is_valid():
-            st.error("Missing API key. Please check your .env file or Space Secrets.")
-            return False
-            
-        st.session_state.chat_manager = ChatManager(Config.GOOGLE_API_KEY)
-        
     if "messages" not in st.session_state:
         st.session_state.messages = []
         
     if "documents" not in st.session_state:
         st.session_state.documents = []
-        
-    return True
+
+    if "selected_model" not in st.session_state:
+        st.session_state.selected_model = Config.MODEL_NAME
+
+    if "api_key" not in st.session_state:
+        st.session_state.api_key = Config.GOOGLE_API_KEY or ""
+
+    if st.session_state.api_key and "chat_manager" not in st.session_state:
+        st.session_state.chat_manager = ChatManager(
+            st.session_state.api_key,
+            model_name=st.session_state.selected_model
+        )
 
 def process_documents(uploaded_files):
     """
@@ -60,10 +62,11 @@ def process_documents(uploaded_files):
             success = st.session_state.embedding_manager.create_embeddings(all_documents)
             
             if success:
-                # Connect the retriever to the chat manager
-                st.session_state.chat_manager.set_retriever(
-                    st.session_state.embedding_manager.retriever
-                )
+                # Connect the retriever to the chat manager if initialized
+                if "chat_manager" in st.session_state and st.session_state.chat_manager:
+                    st.session_state.chat_manager.set_retriever(
+                        st.session_state.embedding_manager.retriever
+                    )
                 st.success(f"Successfully processed {len(all_documents)} document chunks!")
                 return True
             else:
@@ -78,15 +81,52 @@ def main():
     """
     Main application function.
     """
-    # Initialize session state
-    if not initialize_session_state():
-        return
+    initialize_session_state()
     
-    st.title("📚 PDF Chat Assistant")
+    st.title("📚 PDF RAG Chat Assistant")
+    st.caption("Powered by LangChain, FAISS Vector Search, and Google Gemini")
     
     # Sidebar for document upload and controls
     with st.sidebar:
-        st.header("Upload Documents")
+        st.header("⚙️ Configuration")
+        api_key_input = st.text_input(
+            "Google Gemini API Key",
+            value=st.session_state.api_key,
+            type="password",
+            placeholder="Enter your Gemini API key...",
+            help="Get an API key from Google AI Studio (https://aistudio.google.com/)"
+        )
+
+        model_choices = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+        cur_model = st.session_state.get("selected_model", Config.MODEL_NAME)
+        if cur_model not in model_choices:
+            model_choices.insert(0, cur_model)
+
+        selected_model = st.selectbox(
+            "Gemini Model",
+            options=model_choices,
+            index=model_choices.index(cur_model) if cur_model in model_choices else 0,
+            help="Recommended: gemini-3.6-flash or gemini-2.5-flash"
+        )
+        
+        key_changed = api_key_input != st.session_state.api_key
+        model_changed = selected_model != st.session_state.get("selected_model")
+
+        if key_changed or model_changed:
+            st.session_state.api_key = api_key_input
+            st.session_state.selected_model = selected_model
+            if api_key_input.strip():
+                st.session_state.chat_manager = ChatManager(
+                    api_key_input.strip(),
+                    model_name=selected_model
+                )
+                if st.session_state.documents and hasattr(st.session_state.embedding_manager, 'retriever'):
+                    st.session_state.chat_manager.set_retriever(st.session_state.embedding_manager.retriever)
+                st.success("Configuration updated!")
+                st.rerun()
+
+        st.markdown("---")
+        st.header("📄 Upload Documents")
         uploaded_files = st.file_uploader(
             "Upload PDF files", 
             type=['pdf'], 
@@ -94,7 +134,7 @@ def main():
         )
         
         if uploaded_files:
-            process_button = st.button("Process Documents")
+            process_button = st.button("🚀 Process Documents", use_container_width=True)
             if process_button:
                 process_documents(uploaded_files)
                 
@@ -116,6 +156,16 @@ def main():
                 # FIXED HERE:
                 st.rerun()
     
+    # Display empty state welcome guide if no messages
+    if not st.session_state.messages and not st.session_state.documents:
+        st.info(
+            "👋 **Welcome to PDF RAG Chat Assistant!**\n\n"
+            "1. **Set API Key**: Enter your Google Gemini API key in the sidebar (or via `.env` file).\n"
+            "2. **Upload PDFs**: Upload one or more PDF documents in the sidebar.\n"
+            "3. **Process Documents**: Click **Process Documents** to chunk and build the vector search index.\n"
+            "4. **Ask Questions**: Type your question below to get contextual answers with cited sources and page highlights."
+        )
+
     # Display chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -127,6 +177,13 @@ def main():
         st.session_state.messages.append({"role": "user", "content": query})
         with st.chat_message("user"):
             st.write(query)
+
+        # Check if API key is provided
+        if not st.session_state.api_key or "chat_manager" not in st.session_state or not st.session_state.chat_manager:
+            with st.chat_message("assistant"):
+                st.error("⚠️ Please enter your Google Gemini API Key in the sidebar configuration before asking questions.")
+            st.session_state.messages.append({"role": "assistant", "content": "⚠️ Please enter your Google Gemini API Key in the sidebar configuration before asking questions."})
+            return
 
         # Check if documents have been uploaded and processed
         if not st.session_state.documents:
@@ -140,7 +197,6 @@ def main():
             with st.spinner("Thinking..."):
                 # If using direct retriever-based approach
                 if hasattr(st.session_state.embedding_manager, 'retriever') and st.session_state.embedding_manager.retriever:
-                    # Using LangChain's conversational retrieval chain
                     response = st.session_state.chat_manager.generate_response(query, [])
                 else:
                     # Fallback to manual retrieval and response generation

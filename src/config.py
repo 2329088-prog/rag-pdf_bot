@@ -11,14 +11,14 @@ class Config:
     Centralizes all configuration parameters and supports environment variable overrides.
     """
     # API Keys
-    GOOGLE_API_KEY = os.getenv("GEMINI_API_KEY")
+    GOOGLE_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     
     # Text chunking parameters
     CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
     
     # Model settings
-    MODEL_NAME = os.getenv("MODEL_NAME", "gemma-3-27b-it")
+    MODEL_NAME = os.getenv("MODEL_NAME", "gemini-3.6-flash")
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
     
     # Retrieval settings
